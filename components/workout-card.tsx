@@ -148,6 +148,42 @@ function WorkoutStatusBox({
 }
 
 
+// --- SETTING TOGGLE ---
+function SettingToggle({ label, description, checked, onChange }: {
+    label: string;
+    description: string;
+    checked?: boolean;
+    onChange?: (val: boolean) => void;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={() => onChange?.(!checked)}
+            className={cn(
+                "flex flex-col gap-2 p-3 rounded-xl border text-left transition-all",
+                checked
+                    ? "border-primary/30 bg-primary/5"
+                    : "border-zinc-100 bg-zinc-50 hover:bg-zinc-100"
+            )}
+        >
+            <div className="flex items-center justify-between w-full">
+                <span className={cn("text-xs font-bold", checked ? "text-primary" : "text-zinc-700")}>{label}</span>
+                {/* Toggle pill */}
+                <div className={cn(
+                    "relative w-8 h-4 rounded-full transition-colors shrink-0",
+                    checked ? "bg-primary" : "bg-zinc-200"
+                )}>
+                    <div className={cn(
+                        "absolute top-0.5 w-3 h-3 rounded-full bg-white shadow-sm transition-all",
+                        checked ? "left-4" : "left-0.5"
+                    )} />
+                </div>
+            </div>
+            <span className="text-[10px] text-zinc-400 font-medium leading-tight">{description}</span>
+        </button>
+    );
+}
+
 // --- MAIN CARD ---
 
 const MET_VALUES: Record<ExerciseId, number> = {
@@ -207,6 +243,12 @@ export interface WorkoutCardProps {
     liveRepCount?: number;
     /** Daily volume data for display */
     dailyVolume?: { reps: number; calories: number };
+    /** Dev mode toggle — replaces camera with uploaded video */
+    devMode?: boolean;
+    onDevModeChange?: (val: boolean) => void;
+    /** Hide overlays (rep count, form badge, daily volume) for clean demo */
+    hideOverlays?: boolean;
+    onHideOverlaysChange?: (val: boolean) => void;
 }
 
 export function WorkoutCard({
@@ -217,6 +259,10 @@ export function WorkoutCard({
     onSessionEnd,
     liveRepCount,
     dailyVolume,
+    devMode = false,
+    onDevModeChange,
+    hideOverlays = false,
+    onHideOverlaysChange,
 }: WorkoutCardProps) {
     const [viewingDayIndex, setViewingDayIndex] = useState(today);
     const [mounted, setMounted] = useState(false);
@@ -467,9 +513,22 @@ export function WorkoutCard({
             {/* Settings dialog */}
             <Dialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
                 <DialogContent title="Settings">
-                    <h2 className="text-lg font-bold">Settings</h2>
-                    <div className="flex flex-col gap-4 mt-4 text-sm text-zinc-500">
-                        <p>Program settings and preferences will appear here.</p>
+                    <h2 className="text-lg font-bold mb-5">Settings</h2>
+                    <div className="grid grid-cols-2 gap-3">
+                        {/* Dev Mode toggle */}
+                        <SettingToggle
+                            label="Dev Mode"
+                            description="Use uploaded video"
+                            checked={devMode}
+                            onChange={onDevModeChange}
+                        />
+                        {/* Hide Overlays toggle */}
+                        <SettingToggle
+                            label="Hide Overlays"
+                            description="Clean demo view"
+                            checked={hideOverlays}
+                            onChange={onHideOverlaysChange}
+                        />
                     </div>
                 </DialogContent>
             </Dialog>

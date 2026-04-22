@@ -68,18 +68,22 @@ function goodPlankLandmarks(): NormalizedLandmark[] {
 
 describe('initialRepCounterState', () => {
   it('returns { phase: "idle", count: 0, holdSeconds: 0 }', () => {
-    expect(initialRepCounterState()).toEqual({ phase: 'idle', count: 0, holdSeconds: 0 })
+    const s = initialRepCounterState()
+    expect(s.phase).toBe('idle')
+    expect(s.count).toBe(0)
+    expect(s.holdSeconds).toBe(0)
   })
 })
 
 describe('updateRepCounter — push-ups', () => {
   it('count never decreases across a sequence of frames', () => {
+    // Feed each frame twice to satisfy the 2-frame confirmation buffer
     const frames: NormalizedLandmark[][] = [
-      straightArmLandmarks(), // idle/up
-      bentArmLandmarks(),     // down
-      straightArmLandmarks(), // up → count becomes 1
-      bentArmLandmarks(),     // down
-      straightArmLandmarks(), // up → count becomes 2
+      straightArmLandmarks(), straightArmLandmarks(), // idle/up (confirm)
+      bentArmLandmarks(),     bentArmLandmarks(),     // down (confirm)
+      straightArmLandmarks(), straightArmLandmarks(), // up → count 1 (confirm)
+      bentArmLandmarks(),     bentArmLandmarks(),     // down (confirm)
+      straightArmLandmarks(), straightArmLandmarks(), // up → count 2 (confirm)
     ]
 
     let state: RepCounterState = initialRepCounterState()

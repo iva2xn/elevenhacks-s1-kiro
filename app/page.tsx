@@ -15,6 +15,7 @@ import type { ExerciseId } from "@/lib/calorie-utils";
 // and must never run on the server.
 const CameraFeed = dynamic(() => import("@/components/camera-feed"), { ssr: false });
 const PoseEstimator = dynamic(() => import("@/components/pose-estimator"), { ssr: false });
+const DevModeFeed = dynamic(() => import("@/components/dev-mode-feed"), { ssr: false });
 
 // ─── Over-exercise warning message ───────────────────────────────────────────
 const OVER_THRESHOLD_MESSAGE =
@@ -50,6 +51,17 @@ export default function Home() {
   // ── Session state ──────────────────────────────────────────────────────────
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [activeVariation, setActiveVariation] = useState<ExerciseId>("push-ups");
+
+  // ── Settings ───────────────────────────────────────────────────────────────
+  const [devMode, setDevMode] = useState(false);
+  const [hideOverlays, setHideOverlays] = useState(false);
+
+  // Reset video element when switching modes so PoseEstimator gets a fresh ref
+  const handleDevModeChange = useCallback((val: boolean) => {
+    setDevMode(val);
+    setVideoEl(null);
+    setCameraError(null);
+  }, []);
 
   // ── Refs for stale-closure-safe access inside useCallback ─────────────────
   const isSessionActiveRef = useRef(false);
@@ -187,12 +199,16 @@ export default function Home() {
     // Full-screen black background — camera feed renders on top of this
     <div style={{ position: "fixed", inset: 0, backgroundColor: "#000" }}>
 
-      {/* ── Layer 0: Camera feed (full-screen) ─────────────────────────── */}
-      <CameraFeed
-        onStreamReady={onStreamReady}
-        onError={onCameraError}
-        mirrored={true}
-      />
+      {/* ── Layer 0: Camera feed or Dev Mode feed ──────────────────────── */}
+      {devMode ? (
+        <DevModeFeed onStreamReady={onStreamReady} />
+      ) : (
+        <CameraFeed
+          onStreamReady={onStreamReady}
+          onError={onCameraError}
+          mirrored={true}
+        />
+      )}
 
       {/* ── Pose estimator (logic-only, renders nothing) ────────────────── */}
       <PoseEstimator
@@ -253,7 +269,7 @@ export default function Home() {
       )}
 
       {/* ── Layer 10: Form feedback overlay ────────────────────────────── */}
-      {isSessionActive && (
+      {isSessionActive && !hideOverlays && (
         <div
           style={{
             position: "fixed",
@@ -324,7 +340,7 @@ export default function Home() {
       )}
 
       {/* ── Layer 10: Rep count / hold time overlay (top-left) ─────────── */}
-      {isSessionActive && (
+      {isSessionActive && !hideOverlays && (
         <div
           style={{
             position: "fixed",
@@ -369,7 +385,7 @@ export default function Home() {
       )}
 
       {/* ── Layer 10: Daily volume indicator (top-right) ───────────────── */}
-      {dailyVolume.reps > 0 && (
+      {dailyVolume.reps > 0 && !hideOverlays && (
         <div
           style={{
             position: "fixed",
@@ -419,6 +435,10 @@ export default function Home() {
         onSessionEnd={onSessionEnd}
         liveRepCount={liveRepCount}
         dailyVolume={dailyVolume}
+        devMode={devMode}
+        onDevModeChange={handleDevModeChange}
+        hideOverlays={hideOverlays}
+        onHideOverlaysChange={setHideOverlays}
       />
     </div>
   );

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { PoseLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 import type { NormalizedLandmark } from "@/lib/form-validator";
 
 interface PoseEstimatorProps {
@@ -10,102 +9,111 @@ interface PoseEstimatorProps {
   onLandmarks: (landmarks: NormalizedLandmark[] | null) => void;
 }
 
-export default function PoseEstimator({
-  videoEl,
-  isActive,
-  onLandmarks,
-}: PoseEstimatorProps) {
-  const poseLandmarkerRef = useRef<PoseLandmarker | null>(null);
-  const rafHandleRef = useRef<number>(0);
+export default function PoseEstimator({ videoEl, isActive, onLandmarks }: PoseEstimatorProps) {
+  const workerRef = useRef<Worker | null>(null);
+  const rafRef = useRef<number>(0);
+  const canvasRef = useRef<OffscreenCanvas | null>(null);
+  const ctxRef = useRef<OffscreenCanvasRenderingContext2D | null>(null);
   const lastVideoTimeRef = useRef<number>(-1);
-  // Keep a stable ref to the callback to avoid stale closures in the rAF loop
+  const workerReadyRef = useRef(false);
+  const pendingFrameRef = useRef(false);
+
+  const isActiveRef = useRef(isActive);
+  const videoElRef = useRef(videoEl);
   const onLandmarksRef = useRef(onLandmarks);
+
+  useEffect(() => { onLandmarksRef.current = onLandmarks; });
+  useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
+  useEffect(() => { videoElRef.current = videoEl; }, [videoEl]);
+
+  // ── Spawn worker once ──────────────────────────────────────────────────────
   useEffect(() => {
-    onLandmarksRef.current = onLandmarks;
-  });
+    const worker = new Worker("/pose-worker.js");
+    workerRef.current = worker;
 
-  // Initialise PoseLandmarker once on mount
-  useEffect(() => {
-    let cancelled = false;
+    worker.onmessage = (e) => {
+      const { type, landmarks } = e.data;
 
-    async function init() {
-      try {
-        const vision = await FilesetResolver.forVisionTasks(
-          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
-        );
-        const poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-          baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
-            delegate: "GPU",
-          },
-          runningMode: "VIDEO",
-          numPoses: 1,
-        });
-
-        if (!cancelled) {
-          poseLandmarkerRef.current = poseLandmarker;
-        } else {
-          poseLandmarker.close();
-        }
-      } catch (err) {
-        console.error("PoseEstimator: failed to initialise PoseLandmarker", err);
-        // Continuously emit null so callers know detection is unavailable
-        onLandmarksRef.current(null);
+      if (type === "ready") {
+        workerReadyRef.current = true;
+        return;
       }
-    }
 
-    init();
+      if (type === "landmarks") {
+        pendingFrameRef.current = false;
+        if (isActiveRef.current) {
+          onLandmarksRef.current(landmarks ?? null);
+        }
+      }
+
+      if (type === "error") {
+        console.error("[PoseEstimator]", e.data.message);
+      }
+    };
+
+    worker.postMessage({ type: "init" });
 
     return () => {
-      cancelled = true;
-      cancelAnimationFrame(rafHandleRef.current);
-      poseLandmarkerRef.current?.close();
-      poseLandmarkerRef.current = null;
+      cancelAnimationFrame(rafRef.current);
+      worker.terminate();
+      workerRef.current = null;
+      workerReadyRef.current = false;
     };
   }, []);
 
-  // Manage the rAF loop whenever videoEl or isActive changes
+  // ── rAF loop: capture frame → send ImageBitmap to worker ──────────────────
   useEffect(() => {
-    // Cancel any existing loop first
-    cancelAnimationFrame(rafHandleRef.current);
+    cancelAnimationFrame(rafRef.current);
+    lastVideoTimeRef.current = -1;
+    pendingFrameRef.current = false;
 
     if (!isActive || !videoEl) {
       onLandmarksRef.current(null);
       return;
     }
 
-    function detect(timestamp: number) {
-      if (
-        !poseLandmarkerRef.current ||
-        !videoEl ||
-        videoEl.readyState < 2
-      ) {
-        rafHandleRef.current = requestAnimationFrame(detect);
-        return;
-      }
-
-      if (videoEl.currentTime !== lastVideoTimeRef.current) {
-        lastVideoTimeRef.current = videoEl.currentTime;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = poseLandmarkerRef.current.detectForVideo(videoEl, timestamp) as any;
-        if (result.landmarks && result.landmarks.length > 0) {
-          onLandmarksRef.current(result.landmarks[0] as NormalizedLandmark[]);
-        } else {
-          onLandmarksRef.current(null);
-        }
-      }
-
-      rafHandleRef.current = requestAnimationFrame(detect);
+    // Create a small OffscreenCanvas for frame capture
+    // 256×256 is enough for pose detection and much faster to transfer
+    const W = 256;
+    const H = 256;
+    if (!canvasRef.current) {
+      canvasRef.current = new OffscreenCanvas(W, H);
+      ctxRef.current = canvasRef.current.getContext("2d") as OffscreenCanvasRenderingContext2D;
     }
 
-    rafHandleRef.current = requestAnimationFrame(detect);
+    function capture() {
+      const vid = videoElRef.current;
 
-    return () => {
-      cancelAnimationFrame(rafHandleRef.current);
-    };
+      // Always schedule next frame first so UI never stalls
+      rafRef.current = requestAnimationFrame(capture);
+
+      if (!isActiveRef.current || !vid || vid.readyState < 2) return;
+      if (!workerReadyRef.current) return;
+
+      // Skip if video hasn't advanced
+      if (vid.currentTime === lastVideoTimeRef.current) return;
+
+      // Skip if worker is still processing previous frame
+      if (pendingFrameRef.current) return;
+
+      lastVideoTimeRef.current = vid.currentTime;
+      pendingFrameRef.current = true;
+
+      const ctx = ctxRef.current!;
+      ctx.drawImage(vid, 0, 0, W, H);
+
+      // createImageBitmap is zero-copy transferable — no serialization cost
+      createImageBitmap(canvasRef.current!).then((bitmap) => {
+        workerRef.current?.postMessage(
+          { type: "frame", bitmap, timestamp: performance.now() },
+          [bitmap] // transfer ownership — avoids copying pixel data
+        );
+      });
+    }
+
+    rafRef.current = requestAnimationFrame(capture);
+    return () => cancelAnimationFrame(rafRef.current);
   }, [videoEl, isActive]);
 
-  // Logic-only component — renders nothing
   return null;
 }
