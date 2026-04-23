@@ -16,15 +16,13 @@ export function initialRepCounterState(): RepCounterState {
 }
 
 // ─── Thresholds ───────────────────────────────────────────────────────────────
-// Hysteresis band: enter DOWN below 110°, must reach above 145° to count a rep.
-// The 35° gap prevents noise from triggering false reps while still catching
-// fast reps that don't fully extend.
-const DOWN_ENTER = 110;   // elbow bends past this → bottom phase
-const UP_ENTER   = 145;   // elbow extends past this → top phase (rep counted)
+// Wider hysteresis band to catch more push-up styles and camera angles.
+// DOWN: elbow bends below 130° → bottom phase (was 110° — too strict)
+// UP: elbow extends above 155° → top phase, rep counted
+// The wider entry makes it much more responsive to fast/shallow reps.
+const DOWN_ENTER = 130;
+const UP_ENTER   = 155;
 
-// Single-frame confirmation — just 1 frame needed to commit a transition.
-// LIVE_STREAM mode already delivers results async so there's no rAF blocking;
-// adding more confirmation frames only adds lag without reducing noise.
 const CONFIRM_FRAMES = 1;
 
 export function updateRepCounter(
@@ -48,11 +46,10 @@ export function updateRepCounter(
   const rEl = landmarks[14];
   if (!lEl || !rEl || lEl.visibility < 0.4 || rEl.visibility < 0.4) return state;
 
-  // Use the minimum (most-bent) elbow angle — more robust for side-on camera
-  // angles and asymmetric push-up variations
+  // Use average of both elbows — more stable than min for varied camera angles
   const lAngle = computeAngle(landmarks[11], landmarks[13], landmarks[15]);
   const rAngle = computeAngle(landmarks[12], landmarks[14], landmarks[16]);
-  const elbow  = Math.min(lAngle, rAngle);
+  const elbow  = (lAngle + rAngle) / 2;
 
   let { phase, count, holdSeconds, _confirmFrames, _pendingPhase } = state;
 

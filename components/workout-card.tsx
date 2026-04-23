@@ -7,9 +7,11 @@ import { Slot } from "@radix-ui/react-slot";
 import { 
     CheckCircle2, 
     Clock, 
+    Music, 
     Settings, 
     ChevronsUpDown,
-    XIcon
+    XIcon,
+    Loader2
 } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -45,6 +47,14 @@ const EXERCISES: Exercise[] = [
 ];
 
 const PROGRAMS: any[] = [
+    {
+        id: "basic-push-up",
+        name: "Basic Push Up",
+        schedule: ["Push Ups", "Push Ups", "Push Ups", "Push Ups", "Push Ups", "Push Ups", "Push Ups"],
+        exercises: {
+            "Push Ups": [{ id: "push-ups", sets: 1, reps: 10 }],
+        },
+    },
     {
         id: "push-up-only",
         name: "Push Up Only",
@@ -280,7 +290,12 @@ export function WorkoutCard({
     const [isSkipDialogOpen, setIsSkipDialogOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isFinishedOpen, setIsFinishedOpen] = useState(false);
-    const [selectedProgramId, setSelectedProgramId] = useState("push-up-only");
+    const [isMusicOpen, setIsMusicOpen] = useState(false);
+    const [musicLoading, setMusicLoading] = useState(false);
+    const [musicAudio, setMusicAudio] = useState<HTMLAudioElement | null>(null);
+    const [musicMood, setMusicMood] = useState<string | null>(null);
+    const [soundOnFinish, setSoundOnFinish] = useState(true);
+    const [selectedProgramId, setSelectedProgramId] = useState("basic-push-up");
     const [exerciseIndex, setExerciseIndex] = useState(0);
     const [currentSet, setCurrentSet] = useState(1);
     const [status, setStatus] = useState<any>("idle");
@@ -341,6 +356,7 @@ export function WorkoutCard({
     const handleFinishSet = () => {
         const durationSeconds = Math.round((Date.now() - setStartTime) / 1000);
         setCurrentExerciseSets(p => [...p, { reps: parseInt(currentInputs.reps), weight: currentInputs.weight || null, durationSeconds }]);
+        playSetFinishSound();
         setStatus("resting");
         setTimer(60);
     };
@@ -381,6 +397,37 @@ export function WorkoutCard({
 
     const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
 
+    const playSetFinishSound = () => {
+        if (!soundOnFinish) return;
+        try {
+            const ctx = new AudioContext();
+            [440, 660].forEach((freq, i) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = "sine";
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0.15, ctx.currentTime + i * 0.12);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.12 + 0.3);
+                osc.connect(gain).connect(ctx.destination);
+                osc.start(ctx.currentTime + i * 0.12);
+                osc.stop(ctx.currentTime + i * 0.12 + 0.3);
+            });
+        } catch { /* AudioContext not available */ }
+    };
+
+    // Auto-finish set when live rep count reaches target reps
+    useEffect(() => {
+        if (status !== "working") return;
+        if (liveRepCount === undefined) return;
+        const targetReps = parseInt(currentInputs.reps);
+        if (isNaN(targetReps) || targetReps <= 0) return;
+        if (liveRepCount >= targetReps) {
+            playSetFinishSound();
+            handleFinishSet();
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [liveRepCount, status]);
+
     if (!mounted) return null;
 
     const getWorkoutInfo = () => {
@@ -409,6 +456,46 @@ export function WorkoutCard({
     const isSessionWorking = status === "working";
     const showLiveReps = isSessionWorking && liveRepCount !== undefined;
 
+    const handleGenerateMusic = async (mood: string) => {
+        setMusicLoading(true);
+        setMusicMood(mood);
+        try {
+            // Stop any currently playing music
+            if (musicAudio) {
+                musicAudio.pause();
+                URL.revokeObjectURL(musicAudio.src);
+            }
+            const res = await fetch("/api/music", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ mood }),
+            });
+            if (!res.ok) throw new Error("Music generation failed");
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const audio = new Audio(url);
+            audio.loop = true;
+            audio.volume = 0.4;
+            audio.onended = () => URL.revokeObjectURL(url);
+            audio.play();
+            setMusicAudio(audio);
+            setIsMusicOpen(false);
+        } catch (e) {
+            console.error("Music generation failed", e);
+        } finally {
+            setMusicLoading(false);
+        }
+    };
+
+    const handleStopMusic = () => {
+        if (musicAudio) {
+            musicAudio.pause();
+            URL.revokeObjectURL(musicAudio.src);
+            setMusicAudio(null);
+            setMusicMood(null);
+        }
+    };
+
     return (
         <Card className={cn(
             "w-[350px] md:w-[400px] mx-auto fixed bottom-0 left-1/2 -translate-x-1/2 transition-all overflow-hidden z-20 rounded-b-none border-b-0",
@@ -419,6 +506,9 @@ export function WorkoutCard({
                 <div className="flex gap-2 items-center">
                     <div className="flex-1"><ProgramSelector selectedProgramId={selectedProgramId} onSelect={setSelectedProgramId} /></div>
                     <Button variant="outline" onClick={() => setIsSkipDialogOpen(true)} className="h-10 px-4 text-xs font-bold shrink-0">Rest</Button>
+                    <Button variant={musicAudio ? "secondary" : "ghost"} size="icon-sm" onClick={() => musicAudio ? handleStopMusic() : setIsMusicOpen(true)} className={cn("rounded-full h-10 w-10 shrink-0", musicAudio ? "text-primary" : "text-zinc-400 hover:text-zinc-700")}>
+                        <Music className="size-4" />
+                    </Button>
                     <Button variant="ghost" size="icon-sm" onClick={() => setIsSettingsOpen(true)} className="rounded-full h-10 w-10 text-zinc-400 hover:text-zinc-700 shrink-0">
                         <Settings className="size-4" />
                     </Button>
@@ -526,20 +616,33 @@ export function WorkoutCard({
                 <DialogContent title="Settings">
                     <h2 className="text-lg font-bold mb-5">Settings</h2>
                     <div className="grid grid-cols-2 gap-3">
-                        {/* Dev Mode toggle */}
                         <SettingToggle
                             label="Dev Mode"
                             description="Use uploaded video"
                             checked={devMode}
                             onChange={onDevModeChange}
                         />
-                        {/* Hide Overlays toggle */}
                         <SettingToggle
                             label="Hide Overlays"
                             description="Clean demo view"
                             checked={hideOverlays}
                             onChange={onHideOverlaysChange}
                         />
+                        <SettingToggle
+                            label="Sound on Finish"
+                            description="Chime when set ends"
+                            checked={soundOnFinish}
+                            onChange={(v) => setSoundOnFinish(v)}
+                        />
+                    </div>
+                    <div className="mt-4 pt-4 border-t border-dashed border-zinc-200">
+                        <button
+                            type="button"
+                            onClick={() => { handleReset(); setSelectedProgramId("basic-push-up"); setIsSettingsOpen(false); }}
+                            className="w-full text-xs font-bold text-red-500 hover:text-red-600 hover:bg-red-50 rounded-lg py-2.5 transition-colors"
+                        >
+                            Reset Program
+                        </button>
                     </div>
                 </DialogContent>
             </Dialog>
@@ -552,6 +655,45 @@ export function WorkoutCard({
                         <h2 className="text-xl font-bold">Finished!</h2>
                         <p className="text-xs text-zinc-400 text-center">Your summary is being read out loud via voice.</p>
                     </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Music mood picker dialog */}
+            <Dialog open={isMusicOpen} onOpenChange={setIsMusicOpen}>
+                <DialogContent title="Workout Music">
+                    <h2 className="text-lg font-bold mb-1">Workout Music</h2>
+                    <p className="text-xs text-zinc-400 mb-4">Pick a mood — AI generates a 60s track that loops during your workout.</p>
+                    <div className="grid grid-cols-2 gap-2">
+                        {[
+                            { id: "energetic", emoji: "⚡", label: "Energetic", desc: "High tempo, driving" },
+                            { id: "chill", emoji: "🌊", label: "Chill", desc: "Lo-fi, relaxed" },
+                            { id: "aggressive", emoji: "🔥", label: "Aggressive", desc: "Heavy, intense" },
+                            { id: "focused", emoji: "🎯", label: "Focused", desc: "Minimal, clean" },
+                        ].map((m) => (
+                            <button
+                                key={m.id}
+                                onClick={() => handleGenerateMusic(m.id)}
+                                disabled={musicLoading}
+                                className={cn(
+                                    "flex flex-col items-center gap-1 p-3 rounded-xl border text-center transition-all",
+                                    musicLoading && musicMood === m.id
+                                        ? "border-primary/30 bg-primary/5"
+                                        : "border-zinc-100 bg-zinc-50 hover:bg-zinc-100 hover:border-zinc-200",
+                                    musicLoading && musicMood !== m.id && "opacity-50 cursor-not-allowed"
+                                )}
+                            >
+                                <span className="text-xl">{m.emoji}</span>
+                                <span className="text-xs font-bold text-zinc-700">{m.label}</span>
+                                <span className="text-[10px] text-zinc-400">{m.desc}</span>
+                                {musicLoading && musicMood === m.id && (
+                                    <Loader2 className="size-3 text-primary animate-spin mt-1" />
+                                )}
+                            </button>
+                        ))}
+                    </div>
+                    {musicLoading && (
+                        <p className="text-[10px] text-zinc-400 text-center mt-3 animate-pulse">Generating your track... this takes ~15 seconds</p>
+                    )}
                 </DialogContent>
             </Dialog>
         </Card>

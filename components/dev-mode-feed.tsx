@@ -47,22 +47,45 @@ export default function DevModeFeed({ onStreamReady }: DevModeFeedProps) {
 
   if (videoUrl) {
     return (
-      <video
-        ref={videoRef}
-        src={videoUrl}
-        autoPlay
-        loop
-        muted
-        playsInline
-        style={{
-          position: "fixed",
-          inset: 0,
-          width: "100vw",
-          height: "100vh",
-          objectFit: "cover",
-          zIndex: 0,
-        }}
-      />
+      <>
+        {/* Full-screen blurred backdrop — covers sides and bottom */}
+        <video
+          src={videoUrl}
+          autoPlay
+          loop
+          muted
+          playsInline
+          style={{
+            position: "fixed",
+            inset: 0,
+            width: "100vw",
+            height: "100vh",
+            objectFit: "cover",
+            zIndex: 0,
+            filter: "blur(120px)",
+            transform: "scale(1.3)",
+          }}
+        />
+        {/* Main video — pinned to top, sized to fit width */}
+        <video
+          ref={videoRef}
+          src={videoUrl}
+          autoPlay
+          loop
+          muted
+          playsInline
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "auto",
+            maxHeight: "calc(100vh - 240px)",
+            objectFit: "contain",
+            zIndex: 1,
+          }}
+        />
+      </>
     );
   }
 
