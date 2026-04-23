@@ -269,6 +269,9 @@ export interface WorkoutCardProps {
     /** Hide overlays (rep count, form badge, daily volume) for clean demo */
     hideOverlays?: boolean;
     onHideOverlaysChange?: (val: boolean) => void;
+    /** Show/hide skeleton overlay */
+    showSkeleton?: boolean;
+    onShowSkeletonChange?: (val: boolean) => void;
 }
 
 export function WorkoutCard({
@@ -284,6 +287,8 @@ export function WorkoutCard({
     onDevModeChange,
     hideOverlays = false,
     onHideOverlaysChange,
+    showSkeleton = true,
+    onShowSkeletonChange,
 }: WorkoutCardProps) {
     const [viewingDayIndex, setViewingDayIndex] = useState(today);
     const [mounted, setMounted] = useState(false);
@@ -633,6 +638,12 @@ export function WorkoutCard({
                             description="Chime when set ends"
                             checked={soundOnFinish}
                             onChange={(v) => setSoundOnFinish(v)}
+                        />
+                        <SettingToggle
+                            label="Show Skeleton"
+                            description="Pose overlay on video"
+                            checked={showSkeleton}
+                            onChange={onShowSkeletonChange}
                         />
                     </div>
                     <div className="mt-4 pt-4 border-t border-dashed border-zinc-200">

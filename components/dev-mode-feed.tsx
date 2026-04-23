@@ -48,25 +48,16 @@ export default function DevModeFeed({ onStreamReady }: DevModeFeedProps) {
   if (videoUrl) {
     return (
       <>
-        {/* Full-screen blurred backdrop — covers sides and bottom */}
-        <video
-          src={videoUrl}
-          autoPlay
-          loop
-          muted
-          playsInline
+        {/* Solid dark background behind the video — no blur, zero GPU cost */}
+        <div
           style={{
             position: "fixed",
             inset: 0,
-            width: "100vw",
-            height: "100vh",
-            objectFit: "cover",
             zIndex: 0,
-            filter: "blur(120px)",
-            transform: "scale(1.3)",
+            backgroundColor: "#18181b",
           }}
         />
-        {/* Main video — pinned to top, sized to fit width */}
+        {/* Main video — pinned to top */}
         <video
           ref={videoRef}
           src={videoUrl}

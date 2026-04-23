@@ -15,14 +15,9 @@ const WASM_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPI
 const MODEL_URL =
   "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task";
 
-// Target inference interval in ms. 40ms = 25fps inference.
-// The rAF loop runs at 60fps for smooth UI; inference runs every other frame.
-const INFERENCE_INTERVAL_MS = 40;
-
 export default function PoseEstimator({ videoEl, isActive, onLandmarks }: PoseEstimatorProps) {
   const landmarkerRef = useRef<PoseLandmarker | null>(null);
   const rafRef = useRef<number>(0);
-  const lastInferenceTimeRef = useRef<number>(0);
   const lastVideoTimeRef = useRef<number>(-1);
   const isActiveRef = useRef(isActive);
   const videoElRef = useRef(videoEl);
@@ -73,37 +68,30 @@ export default function PoseEstimator({ videoEl, isActive, onLandmarks }: PoseEs
     };
   }, []);
 
-  // ── rAF loop ───────────────────────────────────────────────────────────────
+  // ── Detection loop ─────────────────────────────────────────────────────────
   useEffect(() => {
     cancelAnimationFrame(rafRef.current);
     lastVideoTimeRef.current = -1;
-    lastInferenceTimeRef.current = 0;
 
     if (!isActive || !videoEl) {
       onLandmarksRef.current(null);
       return;
     }
 
-    function detect(now: number) {
-      // Schedule next frame immediately — never block the loop
+    function detect() {
+      // Schedule next IMMEDIATELY so UI never stalls
       rafRef.current = requestAnimationFrame(detect);
 
       const vid = videoElRef.current;
       const lm = landmarkerRef.current;
-
       if (!isActiveRef.current || !vid || vid.readyState < 2 || !lm) return;
 
-      // Throttle inference to INFERENCE_INTERVAL_MS
-      if (now - lastInferenceTimeRef.current < INFERENCE_INTERVAL_MS) return;
-
-      // Skip if video frame hasn't changed
+      // Only run when video has a new frame
       if (vid.currentTime === lastVideoTimeRef.current) return;
-
       lastVideoTimeRef.current = vid.currentTime;
-      lastInferenceTimeRef.current = now;
 
       try {
-        const result = lm.detectForVideo(vid, now) as any;
+        const result = lm.detectForVideo(vid, performance.now()) as any;
         if (result?.landmarks?.length > 0) {
           onLandmarksRef.current(result.landmarks[0] as NormalizedLandmark[]);
         } else {

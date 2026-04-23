@@ -1,5 +1,5 @@
-// Pose estimation Web Worker
-// Runs MediaPipe PoseLandmarker off the main thread so inference never blocks UI
+// Pose estimation Web Worker — runs MediaPipe entirely off the main thread
+// Receives raw pixel data (ImageData buffer), runs inference, posts landmarks back
 
 const MEDIAPIPE_VERSION = "0.10.34";
 const WASM_URL = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/wasm`;
@@ -8,10 +8,11 @@ const MODEL_URL =
 
 let landmarker = null;
 let ready = false;
-let inferring = false;
+let busy = false;
+let canvas = null;
+let ctx = null;
 
 async function init() {
-  // Import MediaPipe inside the worker
   const { FilesetResolver, PoseLandmarker } = await import(
     `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MEDIAPIPE_VERSION}/+esm`
   );
@@ -21,7 +22,7 @@ async function init() {
       const vision = await FilesetResolver.forVisionTasks(WASM_URL);
       landmarker = await PoseLandmarker.createFromOptions(vision, {
         baseOptions: { modelAssetPath: MODEL_URL, delegate },
-        runningMode: "VIDEO",
+        runningMode: "IMAGE",
         numPoses: 1,
         minPoseDetectionConfidence: 0.4,
         minPosePresenceConfidence: 0.4,
@@ -34,11 +35,11 @@ async function init() {
       console.warn(`[pose-worker] delegate=${delegate} failed:`, err);
     }
   }
-  self.postMessage({ type: "error", message: "Could not initialise PoseLandmarker" });
+  self.postMessage({ type: "error", message: "Could not init PoseLandmarker" });
 }
 
-self.onmessage = async (e) => {
-  const { type, bitmap, timestamp } = e.data;
+self.onmessage = (e) => {
+  const { type } = e.data;
 
   if (type === "init") {
     init();
@@ -46,27 +47,34 @@ self.onmessage = async (e) => {
   }
 
   if (type === "frame") {
-    // Drop frame if still processing previous one
-    if (!ready || !landmarker || inferring) {
-      bitmap.close();
-      return;
-    }
+    if (!ready || !landmarker || busy) return;
+    busy = true;
 
-    inferring = true;
+    const { width, height, buffer } = e.data;
+
     try {
-      const result = landmarker.detectForVideo(bitmap, timestamp);
-      bitmap.close();
+      // Reconstruct ImageData from the transferred buffer
+      const pixels = new Uint8ClampedArray(buffer);
+      const imageData = new ImageData(pixels, width, height);
+
+      // We need a canvas to pass to detectForVideo/detect
+      if (!canvas || canvas.width !== width || canvas.height !== height) {
+        canvas = new OffscreenCanvas(width, height);
+        ctx = canvas.getContext("2d");
+      }
+      ctx.putImageData(imageData, 0, 0);
+
+      const result = landmarker.detect(canvas);
+
       if (result?.landmarks?.length > 0) {
-        // Serialize landmarks — structured clone handles plain objects fine
         self.postMessage({ type: "landmarks", landmarks: result.landmarks[0] });
       } else {
         self.postMessage({ type: "landmarks", landmarks: null });
       }
     } catch (err) {
-      bitmap.close();
       self.postMessage({ type: "landmarks", landmarks: null });
     } finally {
-      inferring = false;
+      busy = false;
     }
   }
 };

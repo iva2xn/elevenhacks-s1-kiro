@@ -35,18 +35,25 @@ export default function Home() {
   // ── Camera / pose state ────────────────────────────────────────────────────
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const [cameraError, setCameraError] = useState<"denied" | "unsupported" | null>(null);
-  const [landmarks, setLandmarks] = useState<NormalizedLandmark[] | null>(null);
+  const landmarksRef = useRef<NormalizedLandmark[] | null>(null);
 
-  // ── Form validation state ──────────────────────────────────────────────────
-  const [formResult, setFormResult] = useState<FormValidationResult>({
-    status: "unknown",
-    cue: null,
-  });
+  // ── Form validation — ref for per-frame updates, state for UI at lower freq
+  const formResultRef = useRef<FormValidationResult>({ status: "unknown", cue: null });
+  const [formResult, setFormResult] = useState<FormValidationResult>({ status: "unknown", cue: null });
 
-  // ── Rep counter state ──────────────────────────────────────────────────────
-  const [repCounterState, setRepCounterState] = useState<RepCounterState>(
-    initialRepCounterState()
-  );
+  // ── Rep counter — ref for per-frame updates, state for UI at lower freq
+  const repCounterRef = useRef<RepCounterState>(initialRepCounterState());
+  const [repCounterState, setRepCounterState] = useState<RepCounterState>(initialRepCounterState());
+
+  // Sync refs to state at ~10fps for UI updates (not every frame)
+  const uiUpdateRef = useRef<number>(0);
+  useEffect(() => {
+    const id = setInterval(() => {
+      setFormResult({ ...formResultRef.current });
+      setRepCounterState({ ...repCounterRef.current });
+    }, 100); // 10fps UI updates
+    return () => clearInterval(id);
+  }, []);
 
   // ── Session state ──────────────────────────────────────────────────────────
   const [isSessionActive, setIsSessionActive] = useState(false);
@@ -55,6 +62,7 @@ export default function Home() {
   // ── Settings ───────────────────────────────────────────────────────────────
   const [devMode, setDevMode] = useState(false);
   const [hideOverlays, setHideOverlays] = useState(false);
+  const [showSkeleton, setShowSkeleton] = useState(true);
 
   // Reset video element when switching modes so PoseEstimator gets a fresh ref
   const handleDevModeChange = useCallback((val: boolean) => {
@@ -132,7 +140,7 @@ export default function Home() {
 
   // ── Landmark processing ────────────────────────────────────────────────────
   const onLandmarks = useCallback((lms: NormalizedLandmark[] | null) => {
-    setLandmarks(lms);
+    landmarksRef.current = lms;
 
     if (!isSessionActiveRef.current) return;
 
@@ -143,9 +151,9 @@ export default function Home() {
         : 1 / 30;
     lastTimestampRef.current = now;
 
-    // Update form validation
+    // Update form validation — write to ref, not state
     const result = validateForm(lms, activeVariationRef.current);
-    setFormResult(result);
+    formResultRef.current = result;
 
     // Log bad-form cues (deduplicated — only log when cue changes)
     if (result.status === "bad" && result.cue) {
@@ -155,9 +163,9 @@ export default function Home() {
       }
     }
 
-    // Update rep counter (pure state machine)
-    setRepCounterState((prev) =>
-      updateRepCounter(prev, lms, activeVariationRef.current, deltaSeconds)
+    // Update rep counter — write to ref, not state
+    repCounterRef.current = updateRepCounter(
+      repCounterRef.current, lms, activeVariationRef.current, deltaSeconds
     );
   }, []);
 
@@ -166,21 +174,24 @@ export default function Home() {
   const onSessionStart = useCallback((variation: ExerciseId) => {
     setIsSessionActive(true);
     setActiveVariation(variation);
+    repCounterRef.current = initialRepCounterState();
     setRepCounterState(initialRepCounterState());
-    formErrorsRef.current = []; // reset error log for new set
+    formResultRef.current = { status: "unknown", cue: null };
+    setFormResult({ status: "unknown", cue: null });
+    formErrorsRef.current = [];
   }, []);
 
-  const onSessionEnd = useCallback((formErrors?: string[]) => {
+  const onSessionEnd = useCallback(() => {
     setIsSessionActive(false);
-    setRepCounterState((prev) => {
-      const reps = prev.count;
-      if (reps > 0) {
-        const durationHours = (reps * 30) / 3600;
-        const calories = 8.0 * 70 * durationHours;
-        addSession(reps, calories);
-      }
-      return initialRepCounterState();
-    });
+    const reps = repCounterRef.current.count;
+    if (reps > 0) {
+      const durationHours = (reps * 30) / 3600;
+      const calories = 8.0 * 70 * durationHours;
+      addSession(reps, calories);
+    }
+    repCounterRef.current = initialRepCounterState();
+    setRepCounterState(initialRepCounterState());
+    formResultRef.current = { status: "unknown", cue: null };
     setFormResult({ status: "unknown", cue: null });
     lastTimestampRef.current = 0;
     formErrorsRef.current = [];
@@ -228,13 +239,14 @@ export default function Home() {
       />
 
       {/* ── Layer 1: Skeleton canvas overlay ───────────────────────────── */}
-      {/* Always mounted; draws nothing when landmarks is null */}
-      <SkeletonCanvas
-        landmarks={landmarks}
-        formStatus={formResult.status}
-        activeVariation={activeVariation}
-        videoEl={videoEl}
-      />
+      {showSkeleton && (
+        <SkeletonCanvas
+          landmarksRef={landmarksRef}
+          activeVariation={activeVariation}
+          videoEl={videoEl}
+          isActive={isSessionActive}
+        />
+      )}
 
       {/* ── Camera error / status cards ─────────────────────────────────── */}
       {(cameraError === "denied" || cameraError === "unsupported") && (
@@ -317,7 +329,7 @@ export default function Home() {
               <span style={{ color: "#3f3f46", fontWeight: 700, fontSize: "0.8rem" }}>{formResult.cue}</span>
             </div>
           )}
-          {landmarks === null && (
+          {formResult.status === "unknown" && (
             <div
               style={{
                 backgroundColor: "#fff",
@@ -439,6 +451,8 @@ export default function Home() {
         onDevModeChange={handleDevModeChange}
         hideOverlays={hideOverlays}
         onHideOverlaysChange={setHideOverlays}
+        showSkeleton={showSkeleton}
+        onShowSkeletonChange={setShowSkeleton}
       />
     </div>
   );
