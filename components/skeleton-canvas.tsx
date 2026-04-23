@@ -43,10 +43,8 @@ const VARIATION_CONNECTIONS: Record<ExerciseId, [number, number][]> = {
   ],
 };
 
-function getStrokeColor(formStatus: "good" | "bad" | "unknown"): string {
-  if (formStatus === "good") return "#22c55e";
-  if (formStatus === "bad") return "#ef4444";
-  return "rgba(255,255,255,0.5)";
+function getStrokeColor(_formStatus: "good" | "bad" | "unknown"): string {
+  return "rgba(255,255,255,0.75)";
 }
 
 export default function SkeletonCanvas({

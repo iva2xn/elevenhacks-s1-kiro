@@ -191,7 +191,7 @@ const MET_VALUES: Record<ExerciseId, number> = {
     "archer-push-ups": 8.0, "decline-push-ups": 8.0, "incline-push-ups": 8.0, "plank": 3.0,
 };
 
-async function playTTSSummary(logs: { name: string; sets: { reps: number }[]; durationSeconds: number; exerciseId: ExerciseId }[]) {
+async function playTTSSummary(logs: { name: string; sets: { reps: number }[]; durationSeconds: number; exerciseId: ExerciseId }[], formErrors: string[] = []) {
     const weightKg = 70;
     let totalReps = 0;
     let totalCalories = 0;
@@ -205,14 +205,22 @@ async function playTTSSummary(logs: { name: string; sets: { reps: number }[]; du
         lines.push(`${log.name}: ${reps} reps, about ${cal.toFixed(1)} calories`);
     }
 
+    // Deduplicate and summarise form errors
+    const uniqueErrors = [...new Set(formErrors)];
+    let formFeedback = "";
+    if (uniqueErrors.length > 0) {
+        formFeedback = ` A few form notes: ${uniqueErrors.join(", ")}.`;
+    }
+
     const summary = [
         `Great work! Here's your session summary.`,
         ...lines,
         `Total: ${totalReps} reps and roughly ${totalCalories.toFixed(1)} calories burned.`,
+        formFeedback,
         totalCalories > 80
             ? `That's a solid session. Make sure to eat a good meal with protein to recover.`
             : `Nice effort. Drink some water and rest for at least 30 minutes before your next set.`,
-    ].join(" ");
+    ].filter(Boolean).join(" ");
 
     try {
         const res = await fetch("/api/tts", {
@@ -243,6 +251,8 @@ export interface WorkoutCardProps {
     liveRepCount?: number;
     /** Daily volume data for display */
     dailyVolume?: { reps: number; calories: number };
+    /** Callback to retrieve form errors logged during the set */
+    getFormErrors?: () => string[];
     /** Dev mode toggle — replaces camera with uploaded video */
     devMode?: boolean;
     onDevModeChange?: (val: boolean) => void;
@@ -259,6 +269,7 @@ export function WorkoutCard({
     onSessionEnd,
     liveRepCount,
     dailyVolume,
+    getFormErrors,
     devMode = false,
     onDevModeChange,
     hideOverlays = false,
@@ -349,7 +360,7 @@ export function WorkoutCard({
             } else {
                 setStatus("finished");
                 setIsFinishedOpen(true);
-                playTTSSummary(newLogs);
+                playTTSSummary(newLogs, getFormErrors?.() ?? []);
                 onSessionEnd?.();
             }
         }

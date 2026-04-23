@@ -127,8 +127,10 @@ export default function Home() {
     setCameraError(reason);
   }, []);
 
+  // ── Form error log for post-set summary ──────────────────────────────────
+  const formErrorsRef = useRef<string[]>([]);
+
   // ── Landmark processing ────────────────────────────────────────────────────
-  // Called on every animation frame by PoseEstimator.
   const onLandmarks = useCallback((lms: NormalizedLandmark[] | null) => {
     setLandmarks(lms);
 
@@ -145,6 +147,14 @@ export default function Home() {
     const result = validateForm(lms, activeVariationRef.current);
     setFormResult(result);
 
+    // Log bad-form cues (deduplicated — only log when cue changes)
+    if (result.status === "bad" && result.cue) {
+      const last = formErrorsRef.current[formErrorsRef.current.length - 1];
+      if (last !== result.cue) {
+        formErrorsRef.current.push(result.cue);
+      }
+    }
+
     // Update rep counter (pure state machine)
     setRepCounterState((prev) =>
       updateRepCounter(prev, lms, activeVariationRef.current, deltaSeconds)
@@ -157,12 +167,11 @@ export default function Home() {
     setIsSessionActive(true);
     setActiveVariation(variation);
     setRepCounterState(initialRepCounterState());
+    formErrorsRef.current = []; // reset error log for new set
   }, []);
 
-  // Called when WorkoutCard ends the session (reset or finished)
-  const onSessionEnd = useCallback(() => {
+  const onSessionEnd = useCallback((formErrors?: string[]) => {
     setIsSessionActive(false);
-    // Persist reps to daily volume
     setRepCounterState((prev) => {
       const reps = prev.count;
       if (reps > 0) {
@@ -174,6 +183,7 @@ export default function Home() {
     });
     setFormResult({ status: "unknown", cue: null });
     lastTimestampRef.current = 0;
+    formErrorsRef.current = [];
   }, [addSession]);
 
   // Legacy mirror-mode change handler (kept for backward compat)
@@ -196,8 +206,8 @@ export default function Home() {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    // Full-screen black background — camera feed renders on top of this
-    <div style={{ position: "fixed", inset: 0, backgroundColor: "#000" }}>
+    // White background when no camera feed is active
+    <div style={{ position: "fixed", inset: 0, backgroundColor: "#f4f4f5" }}>
 
       {/* ── Layer 0: Camera feed or Dev Mode feed ──────────────────────── */}
       {devMode ? (
@@ -226,45 +236,33 @@ export default function Home() {
         videoEl={videoEl}
       />
 
-      {/* ── Camera error overlays ───────────────────────────────────────── */}
-      {cameraError === "denied" && (
+      {/* ── Camera error / status cards ─────────────────────────────────── */}
+      {(cameraError === "denied" || cameraError === "unsupported") && (
         <div
           role="alert"
           style={{
             position: "fixed",
-            inset: 0,
+            bottom: "300px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 15,
+            backgroundColor: "#fff",
+            borderRadius: "16px",
+            border: "1px solid #e4e4e7",
+            boxShadow: "0 4px 24px rgba(0,0,0,0.08)",
+            padding: "16px 24px",
             display: "flex",
             alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: "rgba(0,0,0,0.85)",
-            color: "#fff",
-            zIndex: 5,
-            textAlign: "center",
-            padding: "24px",
-            fontSize: "1rem",
+            gap: "10px",
+            whiteSpace: "nowrap",
           }}
         >
-          Camera access denied. Please allow camera access to use pose tracking.
-        </div>
-      )}
-      {cameraError === "unsupported" && (
-        <div
-          role="alert"
-          style={{
-            position: "fixed",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: "rgba(0,0,0,0.85)",
-            color: "#fff",
-            zIndex: 5,
-            textAlign: "center",
-            padding: "24px",
-            fontSize: "1rem",
-          }}
-        >
-          Camera not supported on this device.
+          <span style={{ fontSize: "1.1rem" }}>📷</span>
+          <span style={{ fontSize: "0.8rem", fontWeight: 600, color: "#3f3f46" }}>
+            {cameraError === "denied"
+              ? "Camera access denied — allow camera to enable pose tracking"
+              : "Camera not supported on this device"}
+          </span>
         </div>
       )}
 
@@ -273,7 +271,7 @@ export default function Home() {
         <div
           style={{
             position: "fixed",
-            bottom: "260px", // sit above the WorkoutCard (~240px tall)
+            bottom: "300px",
             left: "50%",
             transform: "translateX(-50%)",
             zIndex: 10,
@@ -283,58 +281,59 @@ export default function Home() {
           }}
         >
           {formResult.status === "good" && (
-            <span
+            <div
               style={{
-                backgroundColor: "rgba(0,0,0,0.6)",
-                color: "#22c55e",
-                fontWeight: 700,
-                fontSize: "0.875rem",
-                padding: "6px 14px",
-                borderRadius: "9999px",
-                border: "1px solid rgba(34,197,94,0.4)",
-                letterSpacing: "0.02em",
+                backgroundColor: "#22c55e",
+                borderRadius: "12px",
+                boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
+                padding: "8px 16px",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
               }}
               role="status"
               aria-live="polite"
             >
-              ✓ Good Form
-            </span>
+              <span style={{ color: "#fff", fontSize: "0.9rem" }}>✓</span>
+              <span style={{ color: "#fff", fontWeight: 700, fontSize: "0.8rem" }}>Good Form</span>
+            </div>
           )}
           {formResult.status === "bad" && formResult.cue && (
-            <span
+            <div
               style={{
-                backgroundColor: "rgba(0,0,0,0.6)",
-                color: "#ef4444",
-                fontWeight: 700,
-                fontSize: "0.875rem",
-                padding: "6px 14px",
-                borderRadius: "9999px",
-                border: "1px solid rgba(239,68,68,0.4)",
-                letterSpacing: "0.02em",
+                backgroundColor: "#fff",
+                borderRadius: "12px",
+                border: "1px solid #e4e4e7",
+                boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+                padding: "8px 16px",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
               }}
               role="alert"
               aria-live="assertive"
             >
-              {formResult.cue}
-            </span>
+              <span style={{ color: "#ef4444", fontSize: "0.9rem" }}>⚠</span>
+              <span style={{ color: "#3f3f46", fontWeight: 700, fontSize: "0.8rem" }}>{formResult.cue}</span>
+            </div>
           )}
           {landmarks === null && (
-            <span
+            <div
               style={{
-                backgroundColor: "rgba(0,0,0,0.6)",
-                color: "rgba(255,255,255,0.7)",
-                fontWeight: 600,
-                fontSize: "0.875rem",
-                padding: "6px 14px",
-                borderRadius: "9999px",
-                border: "1px solid rgba(255,255,255,0.2)",
-                letterSpacing: "0.02em",
+                backgroundColor: "#fff",
+                borderRadius: "12px",
+                border: "1px solid #e4e4e7",
+                boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+                padding: "8px 16px",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
               }}
               role="status"
               aria-live="polite"
             >
-              No pose detected
-            </span>
+              <span style={{ color: "#a1a1aa", fontWeight: 600, fontSize: "0.8rem" }}>No pose detected</span>
+            </div>
           )}
         </div>
       )}
@@ -433,6 +432,7 @@ export default function Home() {
         onMirrorModeChange={onMirrorModeChange}
         onSessionStart={onSessionStart}
         onSessionEnd={onSessionEnd}
+        getFormErrors={() => [...formErrorsRef.current]}
         liveRepCount={liveRepCount}
         dailyVolume={dailyVolume}
         devMode={devMode}

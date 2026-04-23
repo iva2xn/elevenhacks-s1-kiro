@@ -101,13 +101,10 @@ export default function CameraFeed({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "#000",
-          color: "#fff",
+          backgroundColor: "#f4f4f5",
           zIndex: 0,
         }}
-      >
-        Camera access denied. Please allow camera access to use this app.
-      </div>
+      />
     );
   }
 
@@ -121,25 +118,22 @@ export default function CameraFeed({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          backgroundColor: "#000",
-          color: "#fff",
+          backgroundColor: "#f4f4f5",
           zIndex: 0,
         }}
-      >
-        Camera not supported on this device.
-      </div>
+      />
     );
   }
 
   return (
     <>
-      {/* Loading state: dark overlay shown until stream is ready */}
+      {/* Loading state: white background until stream is ready */}
       {!streamReady && (
         <div
           style={{
             position: "fixed",
             inset: 0,
-            backgroundColor: "#000",
+            backgroundColor: "#f4f4f5",
             zIndex: 0,
           }}
         />
