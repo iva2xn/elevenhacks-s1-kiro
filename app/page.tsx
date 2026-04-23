@@ -37,6 +37,10 @@ export default function Home() {
   const [cameraError, setCameraError] = useState<"denied" | "unsupported" | null>(null);
   const landmarksRef = useRef<NormalizedLandmark[] | null>(null);
 
+  // ── Summary overlay state ──────────────────────────────────────────────────
+  const [showSummary, setShowSummary] = useState(false);
+  const [summaryReady, setSummaryReady] = useState(false);
+
   // ── Form validation — ref for per-frame updates, state for UI at lower freq
   const formResultRef = useRef<FormValidationResult>({ status: "unknown", cue: null });
   const [formResult, setFormResult] = useState<FormValidationResult>({ status: "unknown", cue: null });
@@ -453,7 +457,41 @@ export default function Home() {
         onHideOverlaysChange={setHideOverlays}
         showSkeleton={showSkeleton}
         onShowSkeletonChange={setShowSkeleton}
+        onWorkoutFinished={(ready) => { setShowSummary(true); setSummaryReady(ready); }}
+        onSummaryDismiss={() => { setShowSummary(false); setSummaryReady(false); }}
       />
+
+      {/* ── Full-screen summary overlay (z-[200], above everything) ────── */}
+      {showSummary && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 200,
+            backgroundColor: "#fff",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "24px",
+          }}
+        >
+          {!summaryReady ? (
+            <>
+              <div style={{ width: 40, height: 40, border: "3px solid #e4e4e7", borderTopColor: "#3b82f6", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+              <p style={{ fontSize: "0.95rem", fontWeight: 700, color: "#3f3f46" }}>Preparing your workout summary...</p>
+              <p style={{ fontSize: "0.75rem", color: "#a1a1aa" }}>Hang tight, this only takes a moment</p>
+              <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+            </>
+          ) : (
+            <>
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              <h2 style={{ fontSize: "1.25rem", fontWeight: 800, color: "#18181b" }}>Workout Complete</h2>
+              <p style={{ fontSize: "0.75rem", color: "#a1a1aa" }}>Your summary is playing now</p>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

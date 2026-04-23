@@ -272,6 +272,10 @@ export interface WorkoutCardProps {
     /** Show/hide skeleton overlay */
     showSkeleton?: boolean;
     onShowSkeletonChange?: (val: boolean) => void;
+    /** Called when workout finishes with summary state */
+    onWorkoutFinished?: (summaryPlaying: boolean) => void;
+    /** Called when user dismisses the summary */
+    onSummaryDismiss?: () => void;
 }
 
 export function WorkoutCard({
@@ -289,12 +293,15 @@ export function WorkoutCard({
     onHideOverlaysChange,
     showSkeleton = true,
     onShowSkeletonChange,
+    onWorkoutFinished,
+    onSummaryDismiss,
 }: WorkoutCardProps) {
     const [viewingDayIndex, setViewingDayIndex] = useState(today);
     const [mounted, setMounted] = useState(false);
     const [isSkipDialogOpen, setIsSkipDialogOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isFinishedOpen, setIsFinishedOpen] = useState(false);
+    const [summaryPlaying, setSummaryPlaying] = useState(false);
     const [isMusicOpen, setIsMusicOpen] = useState(false);
     const [musicLoading, setMusicLoading] = useState(false);
     const [musicAudio, setMusicAudio] = useState<HTMLAudioElement | null>(null);
@@ -360,7 +367,8 @@ export function WorkoutCard({
 
     const handleFinishSet = () => {
         const durationSeconds = Math.round((Date.now() - setStartTime) / 1000);
-        setCurrentExerciseSets(p => [...p, { reps: parseInt(currentInputs.reps), weight: currentInputs.weight || null, durationSeconds }]);
+        const actualReps = (liveRepCount !== undefined && liveRepCount > 0) ? liveRepCount : parseInt(currentInputs.reps);
+        setCurrentExerciseSets(p => [...p, { reps: actualReps, weight: currentInputs.weight || null, durationSeconds }]);
         playSetFinishSound();
         setStatus("resting");
         setTimer(60);
@@ -381,7 +389,13 @@ export function WorkoutCard({
             } else {
                 setStatus("finished");
                 setIsFinishedOpen(true);
-                playTTSSummary(newLogs, getFormErrors?.() ?? []);
+                setSummaryPlaying(false);
+                onWorkoutFinished?.(false);
+                const errors = getFormErrors?.() ?? [];
+                playTTSSummary(newLogs, errors).then(() => {
+                    setSummaryPlaying(true);
+                    onWorkoutFinished?.(true);
+                });
                 onSessionEnd?.();
             }
         }
@@ -395,9 +409,11 @@ export function WorkoutCard({
         setTimer(0);
         setSessionLogs([]);
         setIsFinishedOpen(false);
+        setSummaryPlaying(false);
         setMirrorMode(false);
         onMirrorModeChange?.(false);
         onSessionEnd?.();
+        onSummaryDismiss?.();
     };
 
     const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
@@ -658,16 +674,7 @@ export function WorkoutCard({
                 </DialogContent>
             </Dialog>
 
-            {/* Finished dialog */}
-            <Dialog open={isFinishedOpen} onOpenChange={(open) => { if (!open) handleReset(); }}>
-                <DialogContent title="Workout Complete">
-                    <div className="flex flex-col items-center gap-4 py-2">
-                        <CheckCircle2 className="size-10 text-primary" />
-                        <h2 className="text-xl font-bold">Finished!</h2>
-                        <p className="text-xs text-zinc-400 text-center">Your summary is being read out loud via voice.</p>
-                    </div>
-                </DialogContent>
-            </Dialog>
+            {/* Summary overlay rendered inside card — moved to page.tsx for full coverage */}
 
             {/* Music mood picker dialog */}
             <Dialog open={isMusicOpen} onOpenChange={setIsMusicOpen}>
